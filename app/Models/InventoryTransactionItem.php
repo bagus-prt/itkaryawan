@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class InventoryTransactionItem extends Model
 {
@@ -18,7 +20,7 @@ class InventoryTransactionItem extends Model
         'quantity' => 'integer',
     ];
 
-    public function transaction()
+    public function transaction(): BelongsTo
     {
         return $this->belongsTo(
             InventoryTransaction::class,
@@ -26,16 +28,21 @@ class InventoryTransactionItem extends Model
         );
     }
 
-    public function inventoryItem()
+    public function inventoryItem(): BelongsTo
     {
         return $this->belongsTo(InventoryItem::class);
     }
 
-    public function relatedLoanItem()
+    public function relatedLoanItem(): BelongsTo
     {
         return $this->belongsTo(
             InventoryTransactionItem::class,
             'related_loan_item_id'
         );
+    }
+
+    public function returns(): HasMany
+    {
+        return $this->hasMany(self::class, 'related_loan_item_id');
     }
 }

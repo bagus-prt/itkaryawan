@@ -3,7 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use App\Models\User;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PtppProgressUpdate extends Model
 {
@@ -21,12 +21,12 @@ class PtppProgressUpdate extends Model
         'recorded_at' => 'datetime',
     ];
 
-    public function ptppRequest()
+    public function ptppRequest(): BelongsTo
     {
         return $this->belongsTo(PtppRequest::class);
     }
 
-    public function user()
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }

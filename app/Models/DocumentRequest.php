@@ -3,8 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use App\Models\User;
-use App\Models\DocumentRequestHistory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class DocumentRequest extends Model
 {
@@ -21,25 +21,42 @@ class DocumentRequest extends Model
         'reviewed_at',
         'review_notes',
         'pdf_path',
+        'department',
+        'work_location',
+        'employee_name',
+        'reviewer_name_snapshot',
+        'leave_entitlement_year',
+        'leave_entitlement_days',
+        'leave_taken_days',
+        'transportation',
+        'expense_paid_by',
+        'return_to_work_date',
+        'leave_due_date',
+        'companions',
+        'employee_signature_path',
+        'manager_signature_path',
     ];
 
     protected $casts = [
         'start_date' => 'date',
         'end_date' => 'date',
+        'return_to_work_date' => 'date',
+        'leave_due_date' => 'date',
         'reviewed_at' => 'datetime',
+        'companions' => 'array',
     ];
 
-    public function user()
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
-    public function reviewer()
+    public function reviewer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by');
     }
 
-    public function histories()
+    public function histories(): HasMany
     {
         return $this->hasMany(DocumentRequestHistory::class);
     }

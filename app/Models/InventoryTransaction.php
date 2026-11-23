@@ -3,7 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use App\Models\User;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class InventoryTransaction extends Model
 {
@@ -12,6 +13,7 @@ class InventoryTransaction extends Model
         'type',
         'borrower_name',
         'division',
+        'borrower_phone',
         'created_by',
         'status',
         'notes',
@@ -22,12 +24,12 @@ class InventoryTransaction extends Model
         'transaction_at' => 'datetime',
     ];
 
-    public function creator()
+    public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    public function items()
+    public function items(): HasMany
     {
         return $this->hasMany(InventoryTransactionItem::class);
     }
