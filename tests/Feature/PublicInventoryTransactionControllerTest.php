@@ -5,8 +5,11 @@ namespace Tests\Feature;
 use App\Models\InventoryCategory;
 use App\Models\InventoryItem;
 use App\Models\InventoryTransaction;
+use App\Models\Role;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -17,6 +20,7 @@ class PublicInventoryTransactionControllerTest extends TestCase
     public function test_guest_can_use_the_shared_form_to_borrow_and_return_an_item(): void
     {
         $item = $this->createItem(3);
+        Storage::fake('local');
 
         $this->get('/i/transaksi')
             ->assertInertia(fn (Assert $page) => $page
@@ -26,13 +30,8 @@ class PublicInventoryTransactionControllerTest extends TestCase
                 ->has('activeLoans', 0)
             );
 
-        $this->post('/i/transaksi', [
-            'inventory_item_id' => $item->id,
-            'borrower_name' => 'Sari',
-            'division' => 'Tamu',
-            'borrower_phone' => '(0812) 3456-7890',
-            'quantity' => 2,
-        ])->assertRedirect('/i/transaksi');
+        $this->post('/i/transaksi', $this->borrowData([$this->line($item, 2)]))
+            ->assertRedirect('/i/transaksi');
 
         $loan = InventoryTransaction::query()->where('type', 'loan')->firstOrFail();
         $loanItem = $loan->items()->firstOrFail();
@@ -63,6 +62,8 @@ class PublicInventoryTransactionControllerTest extends TestCase
                 ->has('activeLoans', 1)
                 ->where('activeLoans.0.id', $loanItem->id)
                 ->where('activeLoans.0.outstanding_quantity', 2)
+                ->missing('activeLoans.0.transaction_code')
+                ->missing('activeLoans.0.borrower_name')
             );
 
         $this->post('/i/transaksi/kembali', [
@@ -170,13 +171,7 @@ class PublicInventoryTransactionControllerTest extends TestCase
         $item->update(['is_borrowable' => false]);
 
         $this->from('/i/transaksi')
-            ->post('/i/transaksi', [
-                'inventory_item_id' => $item->id,
-                'borrower_name' => 'Sari',
-                'division' => 'Tamu',
-                'borrower_phone' => '081234567890',
-                'quantity' => 1,
-            ])
+            ->post('/i/transaksi', $this->borrowData([$this->line($item, 1)]))
             ->assertSessionHasErrors('inventory_item_id');
 
         $this->assertDatabaseHas('inventory_items', [
@@ -193,13 +188,7 @@ class PublicInventoryTransactionControllerTest extends TestCase
         $item->update(['is_active' => false]);
 
         $this->from('/i/transaksi')
-            ->post('/i/transaksi', [
-                'inventory_item_id' => $item->id,
-                'borrower_name' => 'Sari',
-                'division' => 'Tamu',
-                'borrower_phone' => '081234567890',
-                'quantity' => 1,
-            ])
+            ->post('/i/transaksi', $this->borrowData([$this->line($item, 1)]))
             ->assertSessionHasErrors('inventory_item_id');
 
         $this->get('/i/transaksi')
@@ -250,16 +239,102 @@ class PublicInventoryTransactionControllerTest extends TestCase
         $this->assertDatabaseCount('inventory_transactions', 1);
     }
 
-    private function createItem(int $stock): InventoryItem
+    public function test_public_borrow_records_one_signed_transaction_with_multiple_items(): void
     {
-        $category = InventoryCategory::query()->create([
+        Storage::fake('local');
+        $first = $this->createItem(2);
+        $second = $this->createItem(3, 'INV-TEST-2');
+
+        $this->post('/i/transaksi', $this->borrowData([$this->line($first, 2), $this->line($second, 1)]))
+            ->assertRedirect('/i/transaksi')
+            ->assertSessionHas('inventory_success_type', 'loan')
+            ->assertSessionMissing('inventory_receipt');
+
+        $transaction = InventoryTransaction::query()->sole();
+        $this->get('/i/transaksi')->assertDontSee($transaction->transaction_code)
+            ->assertInertia(fn (Assert $page) => $page->where('successType', 'loan')->missing('receipt'));
+        $this->assertSame(2, $transaction->items()->count());
+        $this->assertSame(0, $first->fresh()->stock_on_hand);
+        $this->assertSame(2, $second->fresh()->stock_on_hand);
+        Storage::disk('local')->assertExists($transaction->borrower_signature_path);
+        $url = route('inventory.transactions.signature', $transaction);
+        $this->get($url)->assertRedirect('/login');
+        $employeeRole = Role::query()->create(['name' => 'employee', 'label' => 'Karyawan']);
+        $this->actingAs(User::factory()->create(['role_id' => $employeeRole->id]))->get($url)->assertForbidden();
+        $adminRole = Role::query()->create(['name' => 'admin', 'label' => 'Admin']);
+        $this->actingAs(User::factory()->create(['role_id' => $adminRole->id]))->get($url)->assertOk();
+    }
+
+    public function test_public_borrow_requires_signature_and_rolls_back_if_any_item_is_out_of_stock(): void
+    {
+        Storage::fake('local');
+        $first = $this->createItem(2);
+        $second = $this->createItem(0, 'INV-TEST-2');
+        $data = $this->borrowData([$this->line($first, 1), $this->line($second, 1)]);
+
+        $this->get('/i/transaksi')->assertInertia(fn (Assert $page) => $page
+            ->has('items', 2)
+            ->where('items.1.stock_on_hand', 0));
+        $this->from('/i/transaksi')->post('/i/transaksi', array_replace($data, ['signature' => '']))
+            ->assertSessionHasErrors('signature');
+        $this->from('/i/transaksi')->post('/i/transaksi', $data)->assertSessionHasErrors('quantity');
+        $this->assertSame(2, $first->fresh()->stock_on_hand);
+        $this->assertDatabaseCount('inventory_transactions', 0);
+        $this->assertSame([], Storage::disk('local')->allFiles('inventory-signatures'));
+    }
+
+    public function test_a_guest_can_take_consumables_without_creating_a_returnable_loan(): void
+    {
+        $item = $this->createItem(3);
+        $item->update(['is_borrowable' => false]);
+        $this->get('/i/transaksi')->assertInertia(fn (Assert $page) => $page
+            ->has('items', 0)
+            ->where('consumables.0.id', $item->id));
+        $data = $this->borrowData([$this->line($item, 2)]) + ['type' => 'stock_out'];
+
+        $this->post('/i/transaksi', $data)->assertRedirect('/i/transaksi')
+            ->assertSessionHas('inventory_success_type', 'stock_out');
+        $transaction = InventoryTransaction::query()->sole();
+        $this->assertSame('stock_out', $transaction->type);
+        $this->assertSame('Sari', $transaction->borrower_name);
+        $this->assertSame(1, $item->fresh()->stock_on_hand);
+        Storage::disk('local')->assertExists($transaction->borrower_signature_path);
+
+        $this->post('/i/transaksi/cari-pinjaman', ['borrower_phone' => '081234567890'])->assertRedirect('/i/transaksi');
+        $this->get('/i/transaksi')->assertInertia(fn (Assert $page) => $page->has('activeLoans', 0));
+        $this->from('/i/transaksi')->post('/i/transaksi', $data)->assertSessionHasErrors('quantity');
+        $this->assertDatabaseCount('inventory_transactions', 1);
+        $this->assertSame(1, $item->fresh()->stock_on_hand);
+    }
+
+    private function borrowData(array $items): array
+    {
+        Storage::fake('local');
+
+        return [
+            'items' => $items,
+            'borrower_name' => 'Sari',
+            'division' => 'Tamu',
+            'borrower_phone' => '(0812) 3456-7890',
+            'signature' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/U3sAAAAASUVORK5CYII=',
+        ];
+    }
+
+    private function line(InventoryItem $item, int $quantity): array
+    {
+        return ['inventory_item_id' => $item->id, 'quantity' => $quantity];
+    }
+
+    private function createItem(int $stock, string $code = 'INV-TEST-1'): InventoryItem
+    {
+        $category = InventoryCategory::query()->firstOrCreate([
             'name' => 'Elektronik',
             'is_active' => true,
         ]);
 
         $item = InventoryItem::query()->create([
             'category_id' => $category->id,
-            'code' => 'INV-TEST-1',
+            'code' => $code,
             'name' => 'Proyektor',
             'unit' => 'Unit',
             'minimum_stock' => 10,

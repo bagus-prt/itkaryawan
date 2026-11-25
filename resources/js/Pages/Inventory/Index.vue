@@ -13,12 +13,14 @@ import {
     IconDeviceFloppy,
     IconFilter,
     IconEye,
-    IconTrash,
+    IconArchive,
     IconRefresh,
 } from '@tabler/icons-vue'
 import TablePagination from '@/Components/TablePagination.vue'
+import { useCountUp } from '@/useCountUp'
 
 defineOptions({ layout: AppLayout })
+const countUp = useCountUp()
 
 const props = defineProps({
     items: { type: Object, required: true },
@@ -26,6 +28,7 @@ const props = defineProps({
     units: { type: Array, default: () => [] },
     filters: { type: Object, default: () => ({}) },
     summary: { type: Object, default: () => ({}) },
+    canUpdateItemType: Boolean,
 })
 
 const search = ref(props.filters.search ?? '')
@@ -65,7 +68,7 @@ const form = useForm({
     category_id: '',
     unit: 'Pcs',
     initial_quantity: 0,
-    is_borrowable: false,
+    is_borrowable: '',
     description: '',
     image: null,
 })
@@ -74,6 +77,12 @@ const stockForm = useForm({
     quantity: 1,
     notes: '',
 })
+const typeForm = useForm({ is_borrowable: '' })
+const itemTypes = [
+    { value: false, label: 'Habis Pakai' },
+    { value: true, label: 'Dapat Dipinjam' },
+]
+const typeLabel = (borrowable) => itemTypes.find((type) => type.value === borrowable)?.label ?? '—'
 
 const stockLabel = (status) => ({
     available: 'Tersedia',
@@ -163,16 +172,32 @@ function closeForm() {
 
 function openDetails(item) {
     selectedItem.value = item
+    typeForm.is_borrowable = item.is_borrowable
+    typeForm.clearErrors()
     showDetails.value = true
 }
 
 function closeDetails() {
+    if (typeForm.processing) return
     showDetails.value = false
     selectedItem.value = null
 }
 
+function submitItemType() {
+    if (!selectedItem.value || typeForm.processing) return
+
+    typeForm.patch(`/inventory/${selectedItem.value.id}/type`, {
+        preserveScroll: true,
+        onSuccess: () => {
+            showDetails.value = false
+            selectedItem.value = null
+            flashMessage.value = 'Jenis barang berhasil diubah.'
+        },
+    })
+}
+
 function archiveItem(item) {
-    if (!window.confirm(`Hapus "${item.name}" dari daftar barang aktif? Riwayat transaksi akan tetap tersimpan.`)) {
+    if (!window.confirm(`Arsipkan "${item.name}" dari daftar barang aktif? Riwayat transaksi akan tetap tersimpan.`)) {
         return
     }
 
@@ -232,15 +257,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div class="inventory-page">
+    <div class="inventory-page inventory-workspace">
         <div class="page-heading">
-            <div>
-                <div class="breadcrumb">Inventaris <span>/</span> Master Barang</div>
-                <h1>Master Barang</h1>
-                <p class="page-description">
-                    Kelola data barang, kategori, dan pantau kondisi persediaan.
-                </p>
-            </div>
+            <h1><span class="inventory-mark"><IconPackage :size="21" aria-hidden="true" /></span>Data Barang</h1>
 
             <div class="heading-actions">
                 <button class="primary-button" type="button" @click="openForm">
@@ -263,8 +282,8 @@ onBeforeUnmount(() => {
                 <div class="summary-icon icon-blue"><IconPackage :size="21" /></div>
                 <div class="summary-content">
                     <span class="summary-label">Total jenis barang</span>
-                    <strong>{{ numberFormat(summary.total_items) }}</strong>
-                    <span class="summary-footnote">Barang terdaftar</span>
+                    <strong><span aria-hidden="true">{{ numberFormat(countUp(summary.total_items ?? 0)) }}</span><span class="sr-only">{{ numberFormat(summary.total_items) }}</span></strong>
+
                 </div>
             </article>
 
@@ -272,8 +291,8 @@ onBeforeUnmount(() => {
                 <div class="summary-icon icon-green"><IconCircleCheck :size="21" /></div>
                 <div class="summary-content">
                     <span class="summary-label">Stok tersedia</span>
-                    <strong>{{ numberFormat(summary.available) }}</strong>
-                    <span class="summary-footnote">Di atas stok minimum</span>
+                    <strong><span aria-hidden="true">{{ numberFormat(countUp(summary.available ?? 0)) }}</span><span class="sr-only">{{ numberFormat(summary.available) }}</span></strong>
+
                 </div>
             </article>
 
@@ -281,8 +300,8 @@ onBeforeUnmount(() => {
                 <div class="summary-icon icon-orange"><IconAlertTriangle :size="21" /></div>
                 <div class="summary-content">
                     <span class="summary-label">Stok menipis</span>
-                    <strong>{{ numberFormat(summary.low) }}</strong>
-                    <span class="summary-footnote">Perlu diperhatikan</span>
+                    <strong><span aria-hidden="true">{{ numberFormat(countUp(summary.low ?? 0)) }}</span><span class="sr-only">{{ numberFormat(summary.low) }}</span></strong>
+
                 </div>
             </article>
 
@@ -290,8 +309,8 @@ onBeforeUnmount(() => {
                 <div class="summary-icon icon-red"><IconCircleX :size="21" /></div>
                 <div class="summary-content">
                     <span class="summary-label">Stok habis</span>
-                    <strong>{{ numberFormat(summary.out) }}</strong>
-                    <span class="summary-footnote">Tidak ada stok tersedia</span>
+                    <strong><span aria-hidden="true">{{ numberFormat(countUp(summary.out ?? 0)) }}</span><span class="sr-only">{{ numberFormat(summary.out) }}</span></strong>
+
                 </div>
             </article>
         </section>
@@ -356,16 +375,16 @@ onBeforeUnmount(() => {
 
             <div class="table-scroll">
                 <table class="inventory-table">
-                        <thead>
-                            <tr>
-                                <th>Barang</th>
-                                <th>Kategori</th>
-                                <th class="numeric-cell">Stok</th>
-                                <th>Kondisi</th>
-                                <th>Peminjaman</th>
-                                <th>Aksi</th>
-                            </tr>
-                        </thead>
+                    <thead>
+                        <tr>
+                            <th scope="col">Barang</th>
+                            <th scope="col">Kategori</th>
+                            <th scope="col">Stok</th>
+                            <th scope="col">Status Stok</th>
+                            <th scope="col">Jenis barang</th>
+                            <th scope="col" class="actions-cell">Aksi</th>
+                        </tr>
+                    </thead>
                     <tbody>
                     <tr v-for="item in items.data" :key="item.id">
                     <td>
@@ -380,23 +399,22 @@ onBeforeUnmount(() => {
                             </div>
                             <div>
                                 <div class="item-name">{{ item.name }}</div>
-                                <div class="item-code">{{ item.code }}</div>
-                                <small v-if="!item.is_active" class="archived-label">Diarsipkan</small>
+                                <div class="item-meta">
+                                    <span class="item-code">{{ item.code }}</span>
+                                    <small v-if="!item.is_active" class="archived-label">Diarsipkan</small>
+                                </div>
                             </div>
                         </div>
                     </td>
 
                     <td>{{ item.category?.name ?? '—' }}</td>
 
-                    <td class="numeric-cell">
-                        <div class="stock-cell">
+                    <td>
+                        <div class="stock-quantity">
                             <strong>{{ numberFormat(item.stock_on_hand) }}</strong>
-                            <small>
-                                {{ item.unit }}
-                            </small>
+                            <small>{{ item.unit }}</small>
                         </div>
                     </td>
-
                     <td>
                         <span :class="stockClass(item.stock_status)">
                             <span class="status-dot"></span>
@@ -405,12 +423,12 @@ onBeforeUnmount(() => {
                     </td>
 
                     <td>
-                        <span :class="item.is_borrowable ? 'borrow-yes' : 'borrow-no'">
-                            {{ item.is_borrowable ? 'Dapat dipinjam' : 'Tidak' }}
+                        <span class="item-type" :class="{ borrowable: item.is_borrowable }">
+                            {{ typeLabel(item.is_borrowable) }}
                         </span>
                     </td>
 
-                    <td>
+                    <td class="actions-cell">
                         <div class="row-actions">
                             <button
                                 v-if="item.is_active"
@@ -435,11 +453,11 @@ onBeforeUnmount(() => {
                                 v-if="item.is_active"
                                 class="row-action-button delete-action"
                                 type="button"
-                                :title="`Hapus ${item.name}`"
-                                :aria-label="`Hapus ${item.name}`"
+                                :title="`Arsipkan ${item.name}`"
+                                :aria-label="`Arsipkan ${item.name}`"
                                 @click="archiveItem(item)"
                             >
-                                <IconTrash :size="16" />
+                                <IconArchive :size="16" />
                             </button>
                             <button
                                 v-else
@@ -484,13 +502,12 @@ onBeforeUnmount(() => {
             <TablePagination :pagination="items" label="barang" />
         </section>
 
-        <div v-if="showForm" class="modal-backdrop" @click.self="closeForm">
-            <section class="form-modal" role="dialog" aria-modal="true" aria-labelledby="form-title">
+        <div v-if="showForm" class="modal-backdrop add-item-backdrop" @click.self="closeForm">
+            <section class="form-modal add-item-modal" role="dialog" aria-modal="true" aria-labelledby="form-title">
                 <div class="modal-heading">
                     <div>
-                        <span class="modal-eyebrow">MASTER INVENTARIS</span>
+
                         <h2 id="form-title">Tambah barang</h2>
-                        <p>Lengkapi informasi barang yang akan didaftarkan.</p>
                     </div>
                     <button class="modal-close" type="button" aria-label="Tutup formulir" @click="closeForm">
                         <IconX :size="20" />
@@ -499,7 +516,7 @@ onBeforeUnmount(() => {
 
                 <form @submit.prevent="submitForm">
                     <div class="form-body">
-                        <div class="field-group">
+                        <div class="field-group field-wide">
                             <label for="item-name">Nama barang <span>*</span></label>
                             <input
                                 id="item-name"
@@ -550,7 +567,7 @@ onBeforeUnmount(() => {
                                 step="1"
                                 required
                             />
-                            <small class="field-hint">Jika jumlahnya lebih dari 0, stok awal akan otomatis tercatat sebagai transaksi barang masuk.</small>
+                            <small class="field-hint">Stok di atas 0 dicatat sebagai barang masuk.</small>
                             <small v-if="form.errors.initial_quantity" class="field-error">{{ form.errors.initial_quantity }}</small>
                         </div>
 
@@ -574,30 +591,28 @@ onBeforeUnmount(() => {
                             />
                         </div>
 
-                        <label class="toggle-field">
-                            <input v-model="form.is_borrowable" type="checkbox" />
-                            <span class="toggle-copy">
-                                <strong>Barang dapat dipinjam</strong>
-                                <small>Aktifkan untuk barang seperti laptop, proyektor, atau peralatan kerja.</small>
-                            </span>
-                        </label>
+                        <div class="field-group field-wide">
+                            <label for="item-type">Jenis barang <span>*</span></label>
+                            <select id="item-type" v-model="form.is_borrowable" required>
+                                <option value="" disabled>Pilih jenis barang</option>
+                                <option v-for="type in itemTypes" :key="type.label" :value="type.value">{{ type.label }}</option>
+                            </select>
+                            <small class="field-hint">Jenis barang menentukan formulir transaksi QR tempat barang muncul.</small>
+                            <small v-if="form.errors.is_borrowable" class="field-error">{{ form.errors.is_borrowable }}</small>
+                        </div>
 
-                        <div class="field-group">
+                        <div class="field-group field-wide">
                             <label for="item-description">Keterangan <span class="optional-label">Opsional</span></label>
                             <textarea
                                 id="item-description"
                                 v-model="form.description"
-                                rows="3"
+                                rows="2"
                                 maxlength="2000"
                                 placeholder="Tambahkan spesifikasi atau keterangan barang..."
                             ></textarea>
                             <small v-if="form.errors.description" class="field-error">{{ form.errors.description }}</small>
                         </div>
 
-                        <div class="stock-notice">
-                            <IconPackage :size="19" />
-                            <p>Status stok ditentukan otomatis: 0 habis, 1–10 menipis, dan lebih dari 10 tersedia.</p>
-                        </div>
                     </div>
 
                     <div class="modal-footer">
@@ -636,7 +651,7 @@ onBeforeUnmount(() => {
             <section class="form-modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-title">
                 <div class="modal-heading">
                     <div>
-                        <span class="modal-eyebrow">DETAIL INVENTARIS</span>
+
                         <h2 id="detail-title">{{ selectedItem.name }}</h2>
                         <p>{{ selectedItem.code }} · {{ selectedItem.category?.name ?? 'Tanpa kategori' }}</p>
                     </div>
@@ -652,12 +667,23 @@ onBeforeUnmount(() => {
                     />
                     <div class="detail-facts">
                         <p><strong>Stok:</strong> {{ numberFormat(selectedItem.stock_on_hand) }} {{ selectedItem.unit }}</p>
-                        <p><strong>Status:</strong> {{ selectedItem.is_active ? 'Aktif' : 'Diarsipkan' }}</p>
-                        <p><strong>Peminjaman:</strong> {{ selectedItem.is_borrowable ? 'Dapat dipinjam' : 'Tidak dapat dipinjam' }}</p>
+                        <p><strong>Status stok:</strong> {{ stockLabel(selectedItem.stock_status) }}</p>
+                        <p><strong>Status barang:</strong> {{ selectedItem.is_active ? 'Aktif' : 'Diarsipkan' }}</p>
+                        <p><strong>Jenis barang:</strong> {{ typeLabel(selectedItem.is_borrowable) }}</p>
                         <p><strong>Keterangan:</strong> {{ selectedItem.description || 'Tidak ada keterangan.' }}</p>
                     </div>
                 </div>
-                <div class="modal-footer">
+                <form v-if="canUpdateItemType" class="type-editor" @submit.prevent="submitItemType">
+                    <div class="field-group">
+                        <label for="edit-item-type">Ubah jenis barang</label>
+                        <select id="edit-item-type" v-model="typeForm.is_borrowable" required>
+                            <option v-for="type in itemTypes" :key="type.label" :value="type.value">{{ type.label }}</option>
+                        </select>
+                        <small v-if="typeForm.errors.is_borrowable" class="field-error">{{ typeForm.errors.is_borrowable }}</small>
+                    </div>
+                    <button class="primary-button" type="submit" :disabled="typeForm.processing || typeForm.is_borrowable === selectedItem.is_borrowable">Simpan jenis</button>
+                </form>
+                <div v-else class="modal-footer">
                     <button class="secondary-button" type="button" @click="closeDetails">Tutup</button>
                 </div>
             </section>
@@ -667,9 +693,9 @@ onBeforeUnmount(() => {
             <section class="form-modal" role="dialog" aria-modal="true" aria-labelledby="stock-form-title">
                 <div class="modal-heading">
                     <div>
-                        <span class="modal-eyebrow">TRANSAKSI BARANG MASUK</span>
+
                         <h2 id="stock-form-title">Tambah stok</h2>
-                        <p>{{ stockItem.name }} · Stok saat ini {{ numberFormat(stockItem.stock_on_hand) }} {{ stockItem.unit }}</p>
+                        <p>{{ stockItem.name }} · {{ typeLabel(stockItem.is_borrowable) }} · Stok {{ numberFormat(stockItem.stock_on_hand) }} {{ stockItem.unit }}</p>
                     </div>
                     <button class="modal-close" type="button" aria-label="Tutup formulir" @click="closeStockForm">
                         <IconX :size="20" />
@@ -718,7 +744,7 @@ onBeforeUnmount(() => {
     gap: 8px;
     flex-wrap: wrap;
 }
-.row-actions { display: flex; align-items: center; gap: 7px; }
+.row-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
 .row-action-button {
     display: grid;
     width: 32px;
@@ -730,10 +756,10 @@ onBeforeUnmount(() => {
     border-radius: 4px;
     cursor: pointer;
 }
-.add-action { background: #066fd1; }
-.view-action { background: #2fb344; }
-.delete-action { background: #d63939; }
-.restore-action { background: #667382; }
+.inventory-workspace .row-action-button.add-action { color: #fff; background: #066fd1; border-color: #066fd1; }
+.inventory-workspace .row-action-button.view-action { color: #fff; background: #425269; border-color: #425269; }
+.inventory-workspace .row-action-button.delete-action { color: #fff; background: #b72b39; border-color: #b72b39; }
+.inventory-workspace .row-action-button.restore-action { color: #fff; background: #287046; border-color: #287046; }
 .row-action-button:hover { filter: brightness(.9); }
 .row-action-button:focus-visible { outline: 2px solid #182433; outline-offset: 2px; }
 
@@ -908,7 +934,9 @@ onBeforeUnmount(() => {
     background: white;
 }
 .table-scroll { width: 100%; overflow-x: auto; }
-.inventory-table { width: 100%; border-collapse: collapse; text-align: left; white-space: nowrap; }
+.inventory-table { width: 100%; min-width: 620px; border-collapse: collapse; text-align: left; }
+.inventory-table th:first-child { width: 34%; }
+.inventory-table .actions-cell { width: 1%; text-align: right; }
 .inventory-table thead { background: #f6f8fb; }
 .inventory-table th {
     padding: 12px 17px;
@@ -919,12 +947,11 @@ onBeforeUnmount(() => {
     border-top: 1px solid #e6e7e9;
     border-bottom: 1px solid #e6e7e9;
 }
-.inventory-table td { padding: 14px 17px; border-bottom: 1px solid #edf0f2; color: #465363; }
+.inventory-table td { padding: 11px 17px; border-bottom: 1px solid #edf0f2; color: #465363; vertical-align: middle; }
 .inventory-table tbody tr:last-child td { border-bottom: 0; }
 .inventory-table tbody tr:hover { background: #fbfcfe; }
-.numeric-cell { text-align: right; font-variant-numeric: tabular-nums; }
-.stock-number { color: #182433 !important; font-weight: 600; }
 .item-identity { display: flex; align-items: center; gap: 11px; }
+.item-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 3px; }
 .item-avatar {
     display: grid;
     flex: 0 0 36px;
@@ -934,12 +961,16 @@ onBeforeUnmount(() => {
     color: #066fd1;
     background: #eef5fc;
     border: 1px solid #e2edf9;
-    border-radius: 4px;
+    border-radius: 10px;
+    overflow: hidden;
 }
 .item-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.item-name { color: #182433; font-weight: 500; }
-.item-code { margin-top: 4px; color: #8793a1; font-size: 11px; }
-.archived-label { display: inline-block; margin-top: 4px; color: #667382; font-size: 10px; }
+.item-name { color: #182433; font-weight: 600; overflow-wrap: anywhere; }
+.item-code { color: #667382; font-size: 11px; }
+.archived-label { padding: 1px 6px; border-radius: 999px; background: #edf1f6; color: #485568; font-size: 10px; }
+.stock-quantity { display: flex; align-items: baseline; gap: 4px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.stock-quantity strong { color: #182433; font-weight: 650; }
+.stock-quantity small { color: #667382; font-size: 11px; }
 .stock-badge {
     display: inline-flex;
     align-items: center;
@@ -948,14 +979,14 @@ onBeforeUnmount(() => {
     border-radius: 4px;
     font-size: 11px;
     font-weight: 500;
+    white-space: nowrap;
 }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .stock-available { color: #218838; background: #eaf7ed; }
 .stock-low { color: #bd5707; background: #fff0e5; }
 .stock-out { color: #c02c2c; background: #fdecec; }
-.borrow-yes, .borrow-no { font-size: 12px; }
-.borrow-yes { color: #218838; }
-.borrow-no { color: #8793a1; }
+.item-type { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #edf1f6; color: #485568; font-size: 11px; white-space: nowrap; }
+.item-type.borrowable { background: #e9f0f9; color: #045db0; }
 .empty-state { display: flex; align-items: center; flex-direction: column; padding: 48px 20px; text-align: center; white-space: normal; }
 .empty-icon { display: grid; width: 54px; height: 54px; place-items: center; margin-bottom: 15px; color: #667382; background: #f1f4f8; border-radius: 50%; }
 .empty-state h3 { margin: 0; color: #182433; font-size: 15px; font-weight: 600; }
@@ -1004,6 +1035,29 @@ onBeforeUnmount(() => {
     border-radius: 5px;
     box-shadow: 0 12px 40px rgb(24 36 51 / 18%);
 }
+.add-item-backdrop {
+    align-items: flex-start;
+    scrollbar-width: none;
+}
+.add-item-backdrop::-webkit-scrollbar { display: none; }
+.form-modal.add-item-modal {
+    flex: none;
+    max-width: 660px;
+    max-height: none;
+    margin-block: auto;
+    overflow: visible;
+}
+.add-item-modal .modal-heading { align-items: center; padding-block: 14px; }
+.add-item-modal .modal-heading h2 { margin: 0; }
+.add-item-modal .form-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; padding-block: 14px; }
+.add-item-modal .field-wide { grid-column: 1 / -1; }
+.add-item-modal .form-two-columns { display: contents; }
+.add-item-modal .field-group { gap: 4px; }
+.add-item-modal .image-preview { max-width: 104px; max-height: 72px; }
+.type-editor { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; padding: 14px 22px; border-top: 1px solid #e6e7e9; }
+.type-editor .field-group { flex: 1 1 180px; }
+.add-item-modal .field-group textarea { min-height: 58px; }
+.add-item-modal .modal-footer { padding-block: 10px; border-radius: 0 0 19px 19px; }
 .modal-heading { display: flex; justify-content: space-between; gap: 15px; padding: 23px 25px 20px; border-bottom: 1px solid #e6e7e9; }
 .modal-eyebrow { color: #066fd1; font-size: 10px; font-weight: 600; letter-spacing: 1px; }
 .modal-heading h2 { margin: 7px 0 0; font-size: 20px; font-weight: 600; }
@@ -1032,17 +1086,12 @@ onBeforeUnmount(() => {
 .field-error { color: #d63939; font-size: 11px; line-height: 1.5; }
 .field-hint { color: #8793a1; font-size: 11px; line-height: 1.5; }
 .optional-label { margin-left: 5px; color: #8793a1; font-weight: 400; }
-.toggle-field { display: flex; align-items: flex-start; gap: 11px; padding: 13px; border: 1px solid #e6e7e9; border-radius: 4px; cursor: pointer; }
-.toggle-field input { width: 16px; height: 16px; margin: 2px 0 0; accent-color: #066fd1; }
-.toggle-copy { display: flex; flex-direction: column; gap: 5px; }
-.toggle-copy strong { color: #344054; font-size: 12px; font-weight: 500; }
-.toggle-copy small { color: #667382; font-size: 11px; line-height: 1.5; }
-.stock-notice { display: flex; align-items: flex-start; gap: 10px; padding: 12px; color: #315a83; background: #eef5fc; border: 1px solid #d9e9fa; border-radius: 4px; }
-.stock-notice svg { flex: 0 0 auto; margin-top: 1px; }
-.stock-notice p { margin: 0; font-size: 11px; line-height: 1.6; }
 .modal-footer { display: flex; justify-content: flex-end; gap: 9px; padding: 16px 25px; border-top: 1px solid #e6e7e9; background: #fbfcfe; }
 @media (max-width: 1100px) {
     .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 470px) {
+    .add-item-modal .form-body { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 700px) {
     .page-heading { flex-direction: column; align-items: stretch; }
@@ -1063,3 +1112,5 @@ onBeforeUnmount(() => {
     .modal-footer { padding: 14px 17px; }
 }
 </style>
+
+<style scoped src="../../../css/inventory.css"></style>

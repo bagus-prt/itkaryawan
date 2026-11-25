@@ -5,9 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\InventoryItem;
 use App\Models\InventoryTransactionItem;
 use App\Services\InventoryTransactionService;
+use App\Services\LeaveSignatureService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -35,8 +38,7 @@ class PublicInventoryTransactionController extends Controller
         if (is_string($lookupPhone)) {
             $activeLoans = InventoryTransactionItem::query()
                 ->with([
-                    'transaction:id,transaction_code,type,borrower_name,division,borrower_phone',
-                    'inventoryItem:id,code,name,unit',
+                    'inventoryItem:id,name,unit',
                 ])
                 ->withSum('returns as returned_quantity', 'quantity')
                 ->whereHas('transaction', function (Builder $query) use ($lookupPhone): void {
@@ -55,15 +57,10 @@ class PublicInventoryTransactionController extends Controller
 
                     return [
                         'id' => $loanItem->id,
-                        'transaction_code' => $loanItem->transaction->transaction_code,
-                        'borrower_name' => $loanItem->transaction->borrower_name,
-                        'division' => $loanItem->transaction->division,
                         'item' => [
                             'name' => $loanItem->inventoryItem->name,
-                            'code' => $loanItem->inventoryItem->code,
                             'unit' => $loanItem->inventoryItem->unit,
                         ],
-                        'quantity' => $loanItem->quantity,
                         'outstanding_quantity' => $outstandingQuantity,
                     ];
                 })
@@ -71,36 +68,44 @@ class PublicInventoryTransactionController extends Controller
                 ->values();
         }
 
-        $items = InventoryItem::query()
+        $catalog = InventoryItem::query()
             ->with('category:id,name')
             ->where('is_active', true)
-            ->where('is_borrowable', true)
-            ->where('stock_on_hand', '>', 0)
             ->orderBy('name')
-            ->get()
-            ->map(fn (InventoryItem $item): array => [
-                'id' => $item->id,
-                'name' => $item->name,
-                'code' => $item->code,
-                'category' => $item->category->name,
-                'unit' => $item->unit,
-                'stock_on_hand' => $item->stock_on_hand,
-            ]);
+            ->orderBy('id')
+            ->get();
+        $formatItem = fn (InventoryItem $item): array => [
+            'id' => $item->id,
+            'name' => $item->name,
+            'code' => $item->code,
+            'category' => $item->category->name,
+            'unit' => $item->unit,
+            'stock_on_hand' => $item->stock_on_hand,
+            'image_url' => $item->image_path
+                ? parse_url(Storage::disk('public')->url($item->image_path), PHP_URL_PATH)
+                : null,
+        ];
 
         return Inertia::render('Inventory/PublicTransaction', [
-            'items' => $items,
+            'items' => $catalog->where('is_borrowable', true)->map($formatItem)->values(),
+            'consumables' => $catalog->where('is_borrowable', false)->map($formatItem)->values(),
             'activeLoans' => $activeLoans,
             'borrowerPhoneLookup' => $lookupPhone,
-            'receipt' => session()->pull('inventory_receipt'),
+            'successType' => $request->session()->pull('inventory_success_type'),
         ]);
     }
 
     public function borrow(
         Request $request,
         InventoryTransactionService $transactionService,
+        LeaveSignatureService $signatures,
     ): RedirectResponse {
         $validated = $request->validate([
-            'inventory_item_id' => ['required', 'integer', 'exists:inventory_items,id'],
+            'type' => ['nullable', Rule::in(['loan', 'stock_out'])],
+            'items' => ['required', 'array', 'list', 'min:1'],
+            'items.*' => ['required', 'array:inventory_item_id,quantity'],
+            'items.*.inventory_item_id' => ['required', 'integer', 'distinct'],
+            'items.*.quantity' => ['required', 'integer', 'min:1', 'max:4294967295'],
             'borrower_name' => ['required', 'string', 'max:150'],
             'division' => ['required', 'string', 'max:100'],
             'borrower_phone' => [
@@ -110,27 +115,30 @@ class PublicInventoryTransactionController extends Controller
                 'regex:/^[0-9+()\\-\\s]{7,30}$/',
                 'regex:/\\d/',
             ],
-            'quantity' => ['required', 'integer', 'min:1', 'max:4294967295'],
+            'signature' => ['required', 'string', 'max:350000'],
+        ], [
+            'items.required' => 'Pilih minimal satu barang.',
+            'signature.required' => 'Tanda tangan wajib diisi.',
         ]);
 
-        $item = InventoryItem::query()->findOrFail($validated['inventory_item_id']);
-        $transaction = $transactionService->borrow(
-            $item,
-            $validated['quantity'],
-            $validated['borrower_name'],
-            $validated['division'],
-            $validated['borrower_phone'],
-        );
+        $quantities = collect($validated['items'])->mapWithKeys(fn (array $item) => [
+            (int) $item['inventory_item_id'] => (int) $item['quantity'],
+        ])->all();
+        $signaturePath = $signatures->store($validated['signature'], 'signature', 'inventory-signatures');
+
+        try {
+            $transaction = ($validated['type'] ?? 'loan') === 'stock_out'
+                ? $transactionService->recordStockOut($quantities, $validated['borrower_name'], $validated['division'], $validated['borrower_phone'], signaturePath: $signaturePath)
+                : $transactionService->borrowMultiple($quantities, $validated['borrower_name'], $validated['division'], $validated['borrower_phone'], signaturePath: $signaturePath);
+        } catch (\Throwable $exception) {
+            $signatures->delete($signaturePath);
+
+            throw $exception;
+        }
 
         return redirect()
             ->route('inventory.public')
-            ->with('inventory_receipt', [
-                'type' => 'loan',
-                'transaction_code' => $transaction->transaction_code,
-                'quantity' => $validated['quantity'],
-                'item_name' => $item->name,
-                'unit' => $item->unit,
-            ]);
+            ->with('inventory_success_type', $transaction->type);
     }
 
     public function searchLoans(
@@ -171,11 +179,9 @@ class PublicInventoryTransactionController extends Controller
             'quantity' => ['required', 'integer', 'min:1', 'max:4294967295'],
         ]);
 
-        $loanItem = InventoryTransactionItem::query()
-            ->with('inventoryItem')
-            ->findOrFail($validated['loan_item_id']);
+        $loanItem = InventoryTransactionItem::query()->findOrFail($validated['loan_item_id']);
 
-        $transaction = $transactionService->returnLoan(
+        $transactionService->returnLoan(
             $loanItem,
             $validated['quantity'],
             null,
@@ -184,12 +190,6 @@ class PublicInventoryTransactionController extends Controller
 
         return redirect()
             ->route('inventory.public')
-            ->with('inventory_receipt', [
-                'type' => 'return',
-                'transaction_code' => $transaction->transaction_code,
-                'quantity' => $validated['quantity'],
-                'item_name' => $loanItem->inventoryItem->name,
-                'unit' => $loanItem->inventoryItem->unit,
-            ]);
+            ->with('inventory_success_type', 'return');
     }
 }

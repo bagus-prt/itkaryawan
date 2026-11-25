@@ -16,10 +16,10 @@ import {
     IconChevronDown,
     IconX,
     IconLogout,
-    IconBuilding,
     IconPrinter,
     IconTags,
 } from "@tabler/icons-vue";
+import pertaminaLogo from "../../../logo pertamina.jpg";
 
 const props = defineProps({
     collapsed: {
@@ -121,7 +121,7 @@ const menuGroups = computed(() => {
                             icon: IconPrinter,
                         },
                         {
-                            label: "Riwayat transaksi",
+                            label: "Transaksi",
                             href: "/inventory/transactions",
                             icon: IconHistory,
                         },
@@ -313,7 +313,7 @@ function logout() {
     >
         <div class="sidebar-brand">
             <div class="brand-icon">
-                <IconBuilding :size="22" stroke-width="1.8" />
+                <img :src="pertaminaLogo" alt="Pertamina" />
             </div>
 
             <div v-if="!collapsed" class="brand-text">
@@ -477,15 +477,15 @@ function logout() {
 
 .brand-icon {
     display: flex;
-    flex: 0 0 36px;
+    flex: 0 0 58px;
     align-items: center;
     justify-content: center;
-    width: 36px;
+    width: 58px;
     height: 36px;
-    color: #fff;
-    background: #066fd1;
-    border-radius: 4px;
 }
+
+.brand-icon img { display: block; width: 100%; max-height: 36px; object-fit: contain; }
+.is-collapsed .brand-icon { flex-basis: 50px; width: 50px; }
 
 .brand-text,
 .user-details {

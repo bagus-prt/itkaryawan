@@ -15,8 +15,10 @@ import {
     IconCategory,
 } from '@tabler/icons-vue'
 import TablePagination from '@/Components/TablePagination.vue'
+import { useCountUp } from '@/useCountUp'
 
 defineOptions({ layout: AppLayout })
+const countUp = useCountUp()
 
 const props = defineProps({
     categories: { type: Object, required: true },
@@ -117,22 +119,14 @@ function numberFormat(value) {
 </script>
 
 <template>
-    <div class="categories-page">
+    <div class="categories-page inventory-workspace">
         <div class="page-heading">
-            <div>
-                <div class="breadcrumb">
-                    Inventaris <span>/</span> Kategori Barang
-                </div>
-                <h1>Kategori Barang</h1>
-                <p class="page-description">
-                    Kelola pengelompokan barang untuk memudahkan pencatatan inventaris.
-                </p>
-            </div>
+            <h1><span class="inventory-mark"><IconTags :size="21" aria-hidden="true" /></span>Kategori Barang</h1>
 
             <div class="heading-actions">
                 <Link href="/inventory" class="secondary-button">
                     <IconChevronLeft :size="17" />
-                    Menu utama inventaris
+                    Data Barang
                 </Link>
                 <button class="primary-button" type="button" @click="openCreateForm">
                     <IconPlus :size="18" />
@@ -156,8 +150,7 @@ function numberFormat(value) {
                 </div>
                 <div>
                     <div class="summary-label">Total kategori</div>
-                    <strong>{{ numberFormat(summary.total) }}</strong>
-                    <p>Semua kategori terdaftar</p>
+                    <strong><span aria-hidden="true">{{ numberFormat(countUp(summary.total ?? 0)) }}</span><span class="sr-only">{{ numberFormat(summary.total) }}</span></strong>
                 </div>
             </article>
 
@@ -167,8 +160,7 @@ function numberFormat(value) {
                 </div>
                 <div>
                     <div class="summary-label">Kategori aktif</div>
-                    <strong>{{ numberFormat(summary.active) }}</strong>
-                    <p>Dapat dipilih saat input barang</p>
+                    <strong><span aria-hidden="true">{{ numberFormat(countUp(summary.active ?? 0)) }}</span><span class="sr-only">{{ numberFormat(summary.active) }}</span></strong>
                 </div>
             </article>
 
@@ -178,8 +170,7 @@ function numberFormat(value) {
                 </div>
                 <div>
                     <div class="summary-label">Kategori nonaktif</div>
-                    <strong>{{ numberFormat(summary.inactive) }}</strong>
-                    <p>Tidak tersedia untuk barang baru</p>
+                    <strong><span aria-hidden="true">{{ numberFormat(countUp(summary.inactive ?? 0)) }}</span><span class="sr-only">{{ numberFormat(summary.inactive) }}</span></strong>
                 </div>
             </article>
         </section>
@@ -316,7 +307,7 @@ function numberFormat(value) {
             <section class="form-modal" role="dialog" aria-modal="true" aria-labelledby="form-title">
                 <div class="modal-heading">
                     <div>
-                        <span class="modal-eyebrow">MASTER INVENTARIS</span>
+
                         <h2 id="form-title">
                             {{ editingId ? 'Edit kategori' : 'Tambah kategori' }}
                         </h2>
@@ -505,3 +496,5 @@ tbody tr:hover { background: #fbfcfe; }
     .status-filter { width: 100%; }
 }
 </style>
+
+<style scoped src="../../../css/inventory.css"></style>

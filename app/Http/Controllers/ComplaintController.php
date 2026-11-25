@@ -22,8 +22,12 @@ class ComplaintController extends Controller
             'search' => ['nullable', 'string', 'max:100'],
             'month' => ['nullable', 'integer', Rule::in(range(1, 12))],
             'year' => ['nullable', 'integer', 'between:2000,2100'],
+            'age' => ['nullable', Rule::in(['baru', 'lama', 'sangat_lama'])],
             'per_page' => ['sometimes', 'integer', Rule::in([10, 20, 50])],
         ]);
+        $today = now()->timezone('Asia/Jakarta')->startOfDay();
+        $recent = $today->copy()->subDays(7);
+        $older = $today->copy()->subDays(30);
 
         $complaints = Complaint::query()
             ->with('fuelStation:id,code,address')
@@ -40,20 +44,38 @@ class ComplaintController extends Controller
             })
             ->when($filters['month'] ?? null, fn (Builder $query, int $month) => $query->whereMonth('complaint_date', $month))
             ->when($filters['year'] ?? null, fn (Builder $query, int $year) => $query->whereYear('complaint_date', $year))
+            ->when($filters['age'] ?? null, function (Builder $query, string $age) use ($recent, $older): void {
+                $query->where(function (Builder $group) use ($age, $recent, $older): void {
+                    $this->filterByAge($group, 'complaint_date', $age, $recent->toDateString(), $older->toDateString());
+                    $group->orWhere(function (Builder $fallback) use ($age, $recent, $older): void {
+                        $fallback->whereNull('complaint_date');
+                        $this->filterByAge($fallback, 'created_at', $age, $recent->copy()->utc()->toDateTimeString(), $older->copy()->utc()->toDateTimeString());
+                    });
+                });
+            })
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->paginate((int) ($filters['per_page'] ?? 10))
             ->withQueryString()
-            ->through(fn (Complaint $complaint): array => [
-                'id' => $complaint->id,
-                'station_code' => $complaint->station_code ?? $complaint->fuelStation?->code,
-                'station_address' => $complaint->station_address ?? $complaint->fuelStation?->address,
-                'description' => $complaint->description,
-                'status' => $complaint->status,
-                'date' => $complaint->complaint_date
-                    ? $complaint->complaint_date->format('d/m/Y')
-                    : '',
-            ]);
+            ->through(function (Complaint $complaint) use ($recent, $older): array {
+                $date = $complaint->complaint_date ?? $complaint->created_at?->copy()->timezone('Asia/Jakarta');
+                $age = match (true) {
+                    $date === null => null,
+                    $date->toDateString() >= $recent->toDateString() => 'baru',
+                    $date->toDateString() >= $older->toDateString() => 'lama',
+                    default => 'sangat_lama',
+                };
+
+                return [
+                    'id' => $complaint->id,
+                    'station_code' => $complaint->station_code ?? $complaint->fuelStation?->code,
+                    'station_address' => $complaint->station_address ?? $complaint->fuelStation?->address,
+                    'description' => $complaint->description,
+                    'status' => $complaint->status,
+                    'age' => $age,
+                    'date' => $date?->format('d/m/Y') ?? '',
+                ];
+            });
 
         return Inertia::render('Complaints/Index', [
             'complaints' => $complaints,
@@ -61,9 +83,19 @@ class ComplaintController extends Controller
                 'search' => $filters['search'] ?? '',
                 'month' => isset($filters['month']) ? (int) $filters['month'] : '',
                 'year' => isset($filters['year']) ? (int) $filters['year'] : '',
+                'age' => $filters['age'] ?? '',
             ],
-            'today' => now()->timezone('Asia/Jakarta')->toDateString(),
+            'today' => $today->toDateString(),
         ]);
+    }
+
+    private function filterByAge(Builder $query, string $column, string $age, string $recent, string $older): void
+    {
+        match ($age) {
+            'baru' => $query->where($column, '>=', $recent),
+            'lama' => $query->where($column, '>=', $older)->where($column, '<', $recent),
+            'sangat_lama' => $query->where($column, '<', $older),
+        };
     }
 
     public function store(Request $request): RedirectResponse

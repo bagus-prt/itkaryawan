@@ -1,0 +1,161 @@
+﻿.inventory-workspace {
+    --inventory-border: #e1e8f0;
+    --inventory-subtle: #f5f8fc;
+    --inventory-depth: 0 4px 18px rgb(24 36 51 / 5%);
+}
+
+.inventory-workspace .page-heading {
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.inventory-workspace .page-heading h1 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: clamp(21px, 4vw, 25px);
+    font-weight: 650;
+    letter-spacing: -.025em;
+}
+
+.inventory-workspace .inventory-mark {
+    display: inline-grid;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    place-items: center;
+    border-radius: 12px;
+    background: #e9f0f9;
+    color: #045db0;
+}
+
+.inventory-workspace :is(.primary-button, .secondary-button, .screen-actions a, .screen-actions button) {
+    gap: 7px;
+    min-height: 40px;
+    border-radius: 10px;
+    font-weight: 550;
+}
+
+.inventory-workspace .summary-grid {
+    gap: 12px;
+    margin-bottom: 18px;
+}
+
+.inventory-workspace :is(.summary-card, .table-card, .qr-label) {
+    border-color: var(--inventory-border);
+    border-radius: 16px;
+    box-shadow: var(--inventory-depth);
+}
+
+.inventory-workspace .summary-card {
+    align-items: center;
+    padding: 14px;
+    gap: 10px;
+}
+
+.inventory-workspace .summary-card strong {
+    font-variant-numeric: tabular-nums;
+}
+
+.inventory-workspace .summary-card:first-child {
+    border-color: #d3e3f6;
+    background: linear-gradient(130deg, #fff, #eef5fc 95%);
+}
+
+.inventory-workspace :is(.summary-icon, .category-icon) {
+    border-radius: 11px;
+}
+
+.inventory-workspace .icon-green {
+    color: #23673a;
+    background: #eaf5ee;
+}
+
+.inventory-workspace .icon-orange {
+    color: #935017;
+    background: #fff1e6;
+}
+
+.inventory-workspace .icon-red {
+    color: #a82433;
+    background: #fcecef;
+}
+
+.inventory-workspace :is(.table-heading, .table-card-heading) {
+    padding: 15px 16px;
+}
+
+.inventory-workspace .filter-bar {
+    gap: 8px;
+    padding: 0 16px 14px;
+}
+
+.inventory-workspace :is(.search-field, .select-field, .status-filter) {
+    border-color: var(--inventory-border);
+    border-radius: 10px;
+    background: var(--inventory-subtle);
+}
+
+.inventory-workspace :is(.stock-badge, .status-badge) {
+    border-radius: 999px;
+}
+
+.inventory-workspace :is(.row-action-button, .action-button) {
+    border: 1px solid var(--inventory-border);
+    border-radius: 9px;
+    background: #f5f8fc;
+    color: #045db0;
+}
+
+.inventory-workspace .delete-action {
+    background: #fcecef;
+    color: #a82433;
+}
+
+.inventory-workspace .view-action {
+    color: #425269;
+}
+
+.inventory-workspace .form-modal {
+    border-radius: 20px;
+    box-shadow: 0 16px 48px rgb(24 36 51 / 16%);
+}
+
+.inventory-workspace .form-modal :is(input:not([type='checkbox'], [type='radio']), select, textarea, .modal-close) {
+    border-radius: 10px;
+}
+
+.inventory-workspace .qr-logo {
+    display: block;
+    width: 132px;
+    height: 68px;
+    margin: 0 auto 5px;
+    object-fit: contain;
+}
+
+@media screen and (prefers-reduced-motion: no-preference) {
+    .inventory-workspace :is(.page-heading, .summary-card, .action-card, .table-card, .qr-label, .transaction-options > button) {
+        animation: inventory-enter 360ms ease-out both;
+    }
+
+    .inventory-workspace :is(.summary-card, .action-card):nth-child(2) { animation-delay: 45ms; }
+    .inventory-workspace .transaction-options > button + button { animation-delay: 45ms; }
+    .inventory-workspace :is(.summary-card, .action-card):nth-child(3) { animation-delay: 85ms; }
+    .inventory-workspace .summary-card:nth-child(4) { animation-delay: 125ms; }
+    .inventory-workspace .table-card { animation-delay: 115ms; }
+    .inventory-workspace :is(.form-modal, .action-dialog[open]) { animation: inventory-enter 200ms ease-out both; }
+}
+
+@keyframes inventory-enter {
+    from { opacity: 0; transform: translateY(-7px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@media print {
+    .inventory-workspace .qr-label {
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+    }
+}

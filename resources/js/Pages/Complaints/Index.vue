@@ -22,6 +22,7 @@ const props = defineProps({
 const search = ref(props.filters.search ?? '')
 const month = ref(props.filters.month ?? '')
 const year = ref(props.filters.year ?? '')
+const age = ref(props.filters.age ?? '')
 const modalOpen = ref(false)
 const flashMessage = ref('')
 let searchTimeout
@@ -32,7 +33,7 @@ const form = useForm({
     description: '',
 })
 
-watch([search, month, year], () => {
+watch([search, month, year, age], () => {
     clearTimeout(searchTimeout)
     searchTimeout = setTimeout(applyFilters, 300)
 })
@@ -44,6 +45,7 @@ function applyFilters() {
         search: search.value || undefined,
         month: month.value || undefined,
         year: year.value || undefined,
+        age: age.value || undefined,
         per_page: props.complaints.per_page,
     }, {
         preserveState: true,
@@ -56,6 +58,7 @@ function resetFilters() {
     search.value = ''
     month.value = ''
     year.value = ''
+    age.value = ''
 }
 
 function openModal() {
@@ -80,24 +83,20 @@ function submitForm() {
     })
 }
 
-function statusLabel(status) {
-    return status === 'baru' ? 'Baru' : status
-}
+const ageLabels = { baru: 'Baru', lama: 'Lama', sangat_lama: 'Sangat lama' }
 </script>
 
 <template>
-    <div class="complaints-page">
+    <div class="complaints-page inventory-workspace">
         <div class="page-heading">
             <div>
-                <div class="breadcrumb">Operasional <span>/</span> Keluhan Pelanggan</div>
-                <h1>Keluhan SPBU</h1>
-                <p class="page-description">Kelola keluhan yang disampaikan SPBU kepada Pertamina, termasuk laporan yang dicatat admin saat sidak.</p>
+                <h1><span class="inventory-mark"><IconMessageCircle :size="21" aria-hidden="true" /></span>Keluhan SPBU</h1>
             </div>
 
             <div class="heading-actions">
                 <Link href="/complaints/qr" class="secondary-button">
                     <IconPrinter :size="18" />
-                    Cetak QR Keluhan
+                    QR & Pratinjau
                 </Link>
                 <button class="primary-button" type="button" @click="openModal">
                     <IconPlus :size="18" />
@@ -118,7 +117,7 @@ function statusLabel(status) {
             <div class="table-heading">
                 <div>
                     <h2>Daftar keluhan</h2>
-                    <p>Tanggal tercatat otomatis saat keluhan dikirim atau dicatat admin.</p>
+                    <p>Umur laporan dihitung dari tanggal tercatat.</p>
                 </div>
                 <span class="record-count">{{ complaints.total }} data</span>
             </div>
@@ -137,7 +136,7 @@ function statusLabel(status) {
                     </button>
                 </label>
 
-                <select v-model="month" class="filter-select" aria-label="Filter bulan">
+                <select v-model="month" class="filter-select status-filter" aria-label="Filter bulan">
                     <option value="">Semua bulan</option>
                     <option v-for="(label, index) in ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']" :key="label" :value="index + 1">
                         {{ label }}
@@ -149,7 +148,14 @@ function statusLabel(status) {
                     <input v-model="year" type="number" min="2000" max="2100" placeholder="Semua" aria-label="Filter tahun" />
                 </label>
 
-                <button v-if="search || month || year" class="clear-filter" type="button" @click="resetFilters">
+                <select v-model="age" class="filter-select status-filter" aria-label="Filter umur laporan">
+                    <option value="">Semua umur</option>
+                    <option value="baru">Baru (0–7 hari)</option>
+                    <option value="lama">Lama (8–30 hari)</option>
+                    <option value="sangat_lama">Sangat lama (31+ hari)</option>
+                </select>
+
+                <button v-if="search || month || year || age" class="clear-filter" type="button" @click="resetFilters">
                     Hapus filter
                 </button>
             </div>
@@ -162,7 +168,7 @@ function statusLabel(status) {
                             <th>Nomor / kode SPBU</th>
                             <th>Lokasi / alamat SPBU</th>
                             <th>Keterangan keluhan</th>
-                            <th>Status</th>
+                            <th>Umur laporan</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -171,14 +177,14 @@ function statusLabel(status) {
                             <td class="station-code">{{ complaint.station_code }}</td>
                             <td class="address-cell">{{ complaint.station_address }}</td>
                             <td class="description-cell">{{ complaint.description }}</td>
-                            <td><span class="status-badge">{{ statusLabel(complaint.status) }}</span></td>
+                            <td><span v-if="complaint.age" class="status-badge" :data-age="complaint.age">{{ ageLabels[complaint.age] }}</span><span v-else>—</span></td>
                         </tr>
                         <tr v-if="complaints.data.length === 0">
                             <td colspan="5">
                                 <div class="empty-state">
                                     <IconMessageCircle :size="30" />
-                                    <h3>{{ search || month || year ? 'Keluhan tidak ditemukan' : 'Belum ada keluhan' }}</h3>
-                                    <p>{{ search || month || year ? 'Ubah pencarian atau filter untuk melihat data lainnya.' : 'Keluhan yang dikirim melalui QR dan dicatat admin akan muncul di sini.' }}</p>
+                                    <h3>{{ search || month || year || age ? 'Keluhan tidak ditemukan' : 'Belum ada keluhan' }}</h3>
+                                    <p>{{ search || month || year || age ? 'Ubah pencarian atau filter untuk melihat data lainnya.' : 'Keluhan yang dikirim melalui QR dan dicatat admin akan muncul di sini.' }}</p>
                                 </div>
                             </td>
                         </tr>
@@ -193,7 +199,6 @@ function statusLabel(status) {
             <section class="form-modal" role="dialog" aria-modal="true" aria-labelledby="form-title">
                 <div class="modal-heading">
                     <div>
-                        <span class="modal-eyebrow">INPUT ADMIN / SIDAK</span>
                         <h2 id="form-title">Catat keluhan SPBU</h2>
                         <p>Tanggal laporan akan otomatis tercatat saat formulir disimpan.</p>
                     </div>
@@ -276,6 +281,8 @@ td { padding: 13px 14px; border-bottom: 1px solid #eef0f2; color: #344054; font-
 .address-cell { min-width: 200px; max-width: 280px; }
 .description-cell { min-width: 250px; max-width: 420px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .status-badge { display: inline-flex; padding: 5px 9px; color: #855d00; background: #fff4d6; border-radius: 99px; font-size: 11px; white-space: nowrap; }
+.status-badge[data-age='baru'] { color: #045db0; background: #e9f0f9; }
+.status-badge[data-age='sangat_lama'] { color: #586678; background: #edf1f6; }
 .empty-state { padding: 38px 16px; color: #8793a1; text-align: center; }
 .empty-state h3 { margin: 8px 0 5px; color: #344054; font-size: 14px; }
 .empty-state p { margin: 0; font-size: 12px; }
@@ -312,3 +319,5 @@ td { padding: 13px 14px; border-bottom: 1px solid #eef0f2; color: #344054; font-
     .year-filter input { width: 130px; }
 }
 </style>
+
+<style scoped src="../../../css/inventory.css"></style>

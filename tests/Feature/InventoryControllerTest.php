@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\InventoryCategory;
 use App\Models\InventoryItem;
+use App\Models\InventoryTransaction;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -15,6 +17,43 @@ use Tests\TestCase;
 class InventoryControllerTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_item_creation_requires_an_explicit_type(): void
+    {
+        $this->actingAs(User::factory()->create())->post('/inventory', [])
+            ->assertSessionHasErrors(['is_borrowable' => 'Pilih jenis barang.']);
+    }
+
+    public function test_admin_can_change_item_type_after_outstanding_stock_is_returned(): void
+    {
+        $role = Role::query()->create(['name' => 'admin', 'label' => 'Admin']);
+        $admin = User::factory()->create(['role_id' => $role->id]);
+        $category = InventoryCategory::query()->create(['name' => 'Perlengkapan']);
+        $item = InventoryItem::query()->create([
+            'category_id' => $category->id,
+            'code' => 'INV-TYPE-1',
+            'name' => 'Perlengkapan uji',
+            'unit' => 'Unit',
+            'is_borrowable' => true,
+        ]);
+        $loan = InventoryTransaction::query()->create(['type' => 'loan', 'transaction_code' => 'LOAN-TYPE-1']);
+        $line = $loan->items()->create(['inventory_item_id' => $item->id, 'quantity' => 2]);
+        $url = '/inventory/'.$item->id.'/type';
+
+        $this->actingAs(User::factory()->create())->patch($url, ['is_borrowable' => false])->assertForbidden();
+        $this->actingAs($admin)->from('/inventory')->patch($url, ['is_borrowable' => false])
+            ->assertSessionHasErrors('is_borrowable');
+        $this->assertTrue($item->fresh()->is_borrowable);
+
+        $returned = InventoryTransaction::query()->create(['type' => 'return', 'transaction_code' => 'RETURN-TYPE-1']);
+        $returned->items()->create(['inventory_item_id' => $item->id, 'related_loan_item_id' => $line->id, 'quantity' => 2]);
+        $this->from('/inventory')->patch($url, ['is_borrowable' => false])->assertRedirect('/inventory')
+            ->assertSessionHasNoErrors();
+        $this->assertFalse($item->fresh()->is_borrowable);
+        $this->get('/i/transaksi')->assertInertia(fn (Assert $page) => $page
+            ->has('items', 0)
+            ->where('consumables.0.id', $item->id));
+    }
 
     public function test_creating_an_item_records_initial_stock_and_stock_in_transaction(): void
     {

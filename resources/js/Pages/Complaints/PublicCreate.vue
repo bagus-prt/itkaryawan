@@ -22,7 +22,7 @@ function submitForm() {
 </script>
 
 <template>
-    <main class="public-page">
+    <main class="public-page inventory-workspace">
         <header class="public-header">
             <div class="brand-mark"><IconBuildingStore :size="22" /></div>
             <div>
@@ -31,9 +31,8 @@ function submitForm() {
             </div>
         </header>
 
-        <section class="form-card">
+        <section class="form-card form-modal">
             <div class="form-title">
-                <span class="eyebrow">FORMULIR KELUHAN</span>
                 <h1>Sampaikan Keluhan SPBU</h1>
                 <p>Isi informasi SPBU dan jelaskan keluhan yang ingin disampaikan kepada Pertamina.</p>
             </div>
@@ -63,7 +62,7 @@ function submitForm() {
                     <textarea
                         id="public-station-address"
                         v-model="form.station_address"
-                        rows="3"
+                        rows="2"
                         maxlength="2000"
                         placeholder="Masukkan alamat lengkap SPBU"
                         required
@@ -74,7 +73,6 @@ function submitForm() {
                 <div class="field-group">
                     <label for="public-complaint-date">Tanggal keluhan <span class="auto-label">Terisi otomatis</span></label>
                     <input id="public-complaint-date" type="date" :value="today" disabled />
-                    <small class="field-hint">Tanggal laporan dicatat otomatis saat formulir dikirim.</small>
                 </div>
 
                 <div class="field-group">
@@ -82,7 +80,7 @@ function submitForm() {
                     <textarea
                         id="public-description"
                         v-model="form.description"
-                        rows="6"
+                        rows="4"
                         maxlength="10000"
                         placeholder="Jelaskan keluhan secara rinci agar dapat ditindaklanjuti."
                         required
@@ -90,26 +88,25 @@ function submitForm() {
                     <small v-if="form.errors.description" class="field-error">{{ form.errors.description }}</small>
                 </div>
 
-                <button class="submit-button" type="submit" :disabled="form.processing">
+                <button class="submit-button primary-button" type="submit" :disabled="form.processing">
                     {{ form.processing ? 'Mengirim...' : 'Kirim keluhan' }}
                 </button>
             </form>
 
-            <p class="privacy-note">Keluhan ini akan diteruskan kepada pihak Pertamina untuk ditindaklanjuti.</p>
         </section>
     </main>
 </template>
 
 <style scoped>
-.public-page { min-height: 100vh; padding: 28px 16px 50px; color: #182433; background: #f6f8fb; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-.public-header { display: flex; align-items: center; gap: 11px; width: min(100%, 700px); margin: 0 auto 20px; }
-.brand-mark { display: grid; width: 42px; height: 42px; place-items: center; color: #066fd1; background: #e8f2fc; border-radius: 5px; }
+.public-page { min-height: 100vh; padding: 28px 16px 50px; color: #182433; background: #f2f4f8; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+.public-header { display: flex; align-items: center; gap: 11px; width: min(100%, 620px); margin: 0 auto 20px; }
+.brand-mark { display: grid; width: 42px; height: 42px; place-items: center; color: #045db0; background: #e9f0f9; border-radius: 14px; }
 .public-header strong, .public-header span { display: block; }
 .public-header strong { font-size: 14px; }
 .public-header span { margin-top: 3px; color: #667382; font-size: 11px; }
-.form-card { width: min(100%, 700px); margin: auto; padding: 26px; background: #fff; border: 1px solid #e6e7e9; border-radius: 6px; }
+.form-card { width: min(100%, 620px); margin: auto; padding: 26px; background: #fff; border: 1px solid #e6e7e9; border-radius: 20px; }
 .eyebrow { color: #066fd1; font-size: 10px; font-weight: 600; letter-spacing: 1px; }
-.form-title h1 { margin: 7px 0 0; font-size: 24px; }
+.form-title h1 { font-size: 24px; font-weight: 650; letter-spacing: -.025em; }
 .form-title p { margin: 8px 0 0; color: #667382; font-size: 13px; line-height: 1.55; }
 .complaint-form { display: flex; flex-direction: column; gap: 17px; margin-top: 23px; }
 .field-group { display: flex; flex-direction: column; gap: 7px; }
@@ -127,3 +124,5 @@ function submitForm() {
 .privacy-note { margin: 18px 0 0; color: #8793a1; font-size: 11px; line-height: 1.5; text-align: center; }
 @media (max-width: 600px) { .form-card { padding: 20px 16px; } .form-title h1 { font-size: 21px; } }
 </style>
+
+<style scoped src="../../../css/inventory.css"></style>

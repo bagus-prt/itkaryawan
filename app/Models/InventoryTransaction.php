@@ -14,11 +14,14 @@ class InventoryTransaction extends Model
         'borrower_name',
         'division',
         'borrower_phone',
+        'borrower_signature_path',
         'created_by',
         'status',
         'notes',
         'transaction_at',
     ];
+
+    protected $hidden = ['borrower_signature_path'];
 
     protected $casts = [
         'transaction_at' => 'datetime',

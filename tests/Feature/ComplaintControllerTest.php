@@ -171,6 +171,29 @@ class ComplaintControllerTest extends TestCase
         $this->get('/complaints/qr')->assertRedirect('/login');
     }
 
+    public function test_complaint_age_filter_uses_reporting_date_and_inclusive_boundaries(): void
+    {
+        $this->travelTo('2026-11-24 12:00:00');
+        foreach ([
+            'A' => '2026-11-17',
+            'B' => '2026-11-16',
+            'C' => '2026-10-25',
+            'D' => '2026-10-24',
+        ] as $code => $date) {
+            $this->createComplaint($code, 'Lokasi SPBU', 'Keterangan', $date);
+        }
+
+        $this->actingAs($this->createAdmin());
+        foreach (['baru' => ['A'], 'lama' => ['B', 'C'], 'sangat_lama' => ['D']] as $age => $codes) {
+            $this->get('/complaints?age='.$age)->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->where('filters.age', $age)
+                    ->where('complaints.total', count($codes))
+                    ->where('complaints.data', fn ($rows) => collect($rows)->pluck('station_code')->sort()->values()->all() === $codes
+                        && collect($rows)->every(fn ($row) => $row['age'] === $age)));
+        }
+    }
+
     private function createAdmin(): User
     {
         $adminRole = Role::query()->create([

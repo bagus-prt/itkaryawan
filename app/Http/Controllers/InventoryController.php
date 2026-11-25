@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use RuntimeException;
@@ -110,6 +111,7 @@ class InventoryController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'name']),
             'units' => self::UNITS,
+            'canUpdateItemType' => $request->user()->role?->name === 'admin',
             'filters' => [
                 'search' => $filters['search'] ?? '',
                 'category' => $filters['category'] ?? '',
@@ -150,7 +152,7 @@ class InventoryController extends Controller
             'initial_quantity' => ['required', 'integer', 'min:0', 'max:4294967295'],
             'is_borrowable' => ['required', 'boolean'],
             'description' => ['nullable', 'string', 'max:2000'],
-        ]);
+        ], ['is_borrowable.required' => 'Pilih jenis barang.']);
 
         $imagePath = $validated['image']->store('inventory', 'public');
 
@@ -205,6 +207,38 @@ class InventoryController extends Controller
         return redirect()
             ->route('inventory.index')
             ->with('success', 'Barang berhasil ditambahkan.');
+    }
+
+    public function updateType(Request $request, InventoryItem $item): RedirectResponse
+    {
+        abort_unless($request->user()->role?->name === 'admin', 403);
+        $validated = $request->validate(
+            ['is_borrowable' => ['required', 'boolean']],
+            ['is_borrowable.required' => 'Pilih jenis barang.'],
+        );
+        $borrowable = (bool) $validated['is_borrowable'];
+
+        DB::transaction(function () use ($item, $borrowable): void {
+            $lockedItem = InventoryItem::query()->lockForUpdate()->findOrFail($item->id);
+            if ($lockedItem->is_borrowable === $borrowable) {
+                return;
+            }
+
+            $hasOutstandingLoan = $lockedItem->transactionItems()
+                ->whereHas('transaction', fn ($query) => $query->where('type', 'loan'))
+                ->whereRaw('quantity > coalesce((select sum(returned.quantity) from inventory_transaction_items as returned where returned.related_loan_item_id = inventory_transaction_items.id), 0)')
+                ->exists();
+
+            if ($hasOutstandingLoan) {
+                throw ValidationException::withMessages([
+                    'is_borrowable' => 'Jenis barang hanya bisa diubah setelah semua pinjaman dikembalikan.',
+                ]);
+            }
+
+            $lockedItem->update(['is_borrowable' => $borrowable]);
+        });
+
+        return back()->with('success', 'Jenis barang berhasil diubah.');
     }
 
     public function addStock(

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ComplaintController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InventoryCategoryController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\InventoryTransactionController;
@@ -10,6 +11,7 @@ use App\Http\Controllers\LeaveRequestController;
 use App\Http\Controllers\LeaveReviewController;
 use App\Http\Controllers\PtppController;
 use App\Http\Controllers\PublicInventoryTransactionController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\UserManagementController;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Route;
@@ -28,6 +30,8 @@ Route::middleware('guest')->group(function () {
 });
 
 Route::middleware('auth')->group(function () {
+    Route::get('/reports', ReportController::class)->name('reports.index');
+
     Route::get('/ptpp', [PtppController::class, 'index'])
         ->name('ptpp.index');
 
@@ -157,12 +161,16 @@ Route::middleware('auth')->group(function () {
 
     Route::post('/inventory/{item}/stock', [InventoryController::class, 'addStock'])
         ->name('inventory.stock.store');
+    Route::patch('/inventory/{item}/type', [InventoryController::class, 'updateType'])
+        ->name('inventory.type.update');
 
     Route::get('/inventory/transactions/qr', [InventoryTransactionQrController::class, 'show'])
         ->name('inventory.transactions.qr');
 
     Route::get('/inventory/transactions', [InventoryTransactionController::class, 'index'])
         ->name('inventory.transactions.index');
+    Route::get('/inventory/transactions/{transaction}/signature', [InventoryTransactionController::class, 'signature'])
+        ->name('inventory.transactions.signature');
 
     Route::post('/inventory/transactions', [InventoryTransactionController::class, 'store'])
         ->name('inventory.transactions.store');
@@ -210,6 +218,5 @@ Route::post('/logout', [AuthController::class, 'logout'])
     ->middleware('auth')
     ->name('logout');
 
-Route::get('/dashboard', function () {
-    return Inertia::render('Dashboard');
-})->middleware('auth')->name('dashboard');
+Route::get('/dashboard', DashboardController::class)
+    ->middleware('auth')->name('dashboard');
